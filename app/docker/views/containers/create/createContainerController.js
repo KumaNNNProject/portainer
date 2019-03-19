@@ -1,145 +1,170 @@
 import _ from 'lodash-es';
-import { ContainerCapabilities, ContainerCapability } from '../../../models/containerCapabilities';
-import { AccessControlFormData } from '../../../../portainer/components/accessControlForm/porAccessControlFormModel';
-import { ContainerDetailsViewModel } from '../../../models/container';
+import { ContainerCapabilities, ContainerCapability } from 'Docker/models/containerCapabilities';
+import { AccessControlFormData } from 'Portainer/components/accessControlForm/porAccessControlFormModel';
+import { ContainerDetailsViewModel } from 'Docker/models/container';
+import { prepareCapabilities, addVolume } from './includes/prepares';
 
 
-angular.module('portainer.docker')
-.controller('CreateContainerController', ['$q', '$scope', '$state', '$timeout', '$transition$', '$filter', 'Container', 'ContainerHelper', 'Image', 'ImageHelper', 'Volume', 'NetworkService', 'ResourceControlService', 'Authentication', 'Notifications', 'ContainerService', 'ImageService', 'FormValidator', 'ModalService', 'RegistryService', 'SystemService', 'SettingsService', 'PluginService', 'HttpRequestHelper',
-function ($q, $scope, $state, $timeout, $transition$, $filter, Container, ContainerHelper, Image, ImageHelper, Volume, NetworkService, ResourceControlService, Authentication, Notifications, ContainerService, ImageService, FormValidator, ModalService, RegistryService, SystemService, SettingsService, PluginService, HttpRequestHelper) {
+import angular from 'angular';
 
-  $scope.create = create;
+class CreateContainerController {
+  /* @ngInject */
+  constructor($q, $scope, $state, $timeout, $transition$, $filter, ContainerHelper, ImageHelper, VolumeService, NetworkService, ResourceControlService, Authentication, Notifications, ContainerService, ImageService, FormValidator, ModalService, RegistryService, SystemService, SettingsService, PluginService, HttpRequestHelper) {
+    this.$q = $q;
+    this.$scope = $scope; // TODO : Remove this temporary scope save for ApplicationState
+    this.$state = $state;
+    this.$timeout = $timeout;
+    this.$transition$ = $transition$;
+    this.$filter = $filter;
+    this.ContainerHelper = ContainerHelper;
+    this.ImageHelper = ImageHelper;
+    this.HttpRequestHelper = HttpRequestHelper;
+    this.VolumeService = VolumeService;
+    this.NetworkService = NetworkService;
+    this.ContainerService = ContainerService;
+    this.ImageService = ImageService;
+    this.RegistryService = RegistryService;
+    this.ResourceControlService = ResourceControlService;
+    this.SystemService = SystemService;
+    this.SettingsService = SettingsService;
+    this.PluginService = PluginService;
+    this.Authentication = Authentication;
+    this.Notifications = Notifications;
+    this.FormValidator = FormValidator;
+    this.ModalService = ModalService;
 
-  $scope.formValues = {
-    alwaysPull: true,
-    Console: 'none',
-    Volumes: [],
-    NetworkContainer: '',
-    Labels: [],
-    ExtraHosts: [],
-    MacAddress: '',
-    IPv4: '',
-    IPv6: '',
-    AccessControlData: new AccessControlFormData(),
-    CpuLimit: 0,
-    MemoryLimit: 0,
-    MemoryReservation: 0,
-    NodeName: null,
-    capabilities: [],
-    LogDriverName: '',
-    LogDriverOpts: []
-  };
-
-  $scope.extraNetworks = {};
-
-  $scope.state = {
-    formValidationError: '',
-    actionInProgress: false
-  };
-
-  $scope.refreshSlider = function () {
-    $timeout(function () {
-      $scope.$broadcast('rzSliderForceRender');
-    });
-  };
-
-  $scope.config = {
-    Image: '',
-    Env: [],
-    Cmd: '',
-    MacAddress: '',
-    ExposedPorts: {},
-    HostConfig: {
-      RestartPolicy: {
-        Name: 'no'
-      },
-      PortBindings: [],
-      PublishAllPorts: false,
-      Binds: [],
-      AutoRemove: false,
-      NetworkMode: 'bridge',
-      Privileged: false,
-      Runtime: '',
+    this.formValues = {
+      alwaysPull: true,
+      Console: 'none',
+      Volumes: [],
+      NetworkContainer: '',
+      Labels: [],
       ExtraHosts: [],
-      Devices: [],
-      CapAdd: [],
-      CapDrop: []
-    },
-    NetworkingConfig: {
-      EndpointsConfig: {}
-    },
-    Labels: {}
-  };
+      MacAddress: '',
+      IPv4: '',
+      IPv6: '',
+      AccessControlData: new AccessControlFormData(),
+      CpuLimit: 0,
+      MemoryLimit: 0,
+      MemoryReservation: 0,
+      NodeName: null,
+      capabilities: [],
+      LogDriverName: '',
+      LogDriverOpts: []
+    };
 
-  $scope.addVolume = function() {
-    $scope.formValues.Volumes.push({ name: '', containerPath: '', readOnly: false, type: 'volume' });
-  };
+    this.extraNetworks = {};
 
-  $scope.removeVolume = function(index) {
-    $scope.formValues.Volumes.splice(index, 1);
-  };
+    this.state = {
+      formValidationError: '',
+      actionInProgress: false
+    };
 
-  $scope.addEnvironmentVariable = function() {
-    $scope.config.Env.push({ name: '', value: ''});
-  };
+    this.config = {
+      Image: '',
+      Env: [],
+      Cmd: '',
+      MacAddress: '',
+      ExposedPorts: {},
+      HostConfig: {
+        RestartPolicy: {
+          Name: 'no'
+        },
+        PortBindings: [],
+        PublishAllPorts: false,
+        Binds: [],
+        AutoRemove: false,
+        NetworkMode: 'bridge',
+        Privileged: false,
+        Runtime: '',
+        ExtraHosts: [],
+        Devices: [],
+        CapAdd: [],
+        CapDrop: []
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {}
+      },
+      Labels: {}
+    };
 
-  $scope.removeEnvironmentVariable = function(index) {
-    $scope.config.Env.splice(index, 1);
-  };
-
-  $scope.addPortBinding = function() {
-    $scope.config.HostConfig.PortBindings.push({ hostPort: '', containerPort: '', protocol: 'tcp' });
-  };
-
-  $scope.removePortBinding = function(index) {
-    $scope.config.HostConfig.PortBindings.splice(index, 1);
-  };
-
-  $scope.addLabel = function() {
-    $scope.formValues.Labels.push({ name: '', value: ''});
-  };
-
-  $scope.removeLabel = function(index) {
-    $scope.formValues.Labels.splice(index, 1);
-  };
-
-  $scope.addExtraHost = function() {
-    $scope.formValues.ExtraHosts.push({ value: '' });
-  };
-
-  $scope.removeExtraHost = function(index) {
-    $scope.formValues.ExtraHosts.splice(index, 1);
-  };
-
-  $scope.addDevice = function() {
-    $scope.config.HostConfig.Devices.push({ pathOnHost: '', pathInContainer: '' });
-  };
-
-  $scope.removeDevice = function(index) {
-    $scope.config.HostConfig.Devices.splice(index, 1);
-  };
-
-  $scope.addLogDriverOpt = function() {
-    $scope.formValues.LogDriverOpts.push({ name: '', value: ''});
-  };
-
-  $scope.removeLogDriverOpt = function(index) {
-    $scope.formValues.LogDriverOpts.splice(index, 1);
-  };
-
-  $scope.fromContainerMultipleNetworks = false;
-
-  function prepareImageConfig(config) {
-    var image = config.Image;
-    var registry = $scope.formValues.Registry;
-    var imageConfig = ImageHelper.createImageConfigForContainer(image, registry.URL);
-    config.Image = imageConfig.fromImage + ':' + imageConfig.tag;
-    $scope.imageConfig = imageConfig;
+    this.fromContainerMultipleNetworks = false;
+    this.addVolume = addVolume;
   }
 
-  function preparePortBindings(config) {
+  refreshSlider() {
+    this.$timeout(function () {
+      this.$broadcast('rzSliderForceRender');
+    });
+  }
+
+  // addVolume() {
+  //   this.formValues.Volumes.push({ name: '', containerPath: '', readOnly: false, type: 'volume' });
+  // }
+
+  removeVolume(index) {
+    this.formValues.Volumes.splice(index, 1);
+  }
+
+  addEnvironmentVariable() {
+    this.config.Env.push({ name: '', value: ''});
+  }
+
+  removeEnvironmentVariable(index) {
+    this.config.Env.splice(index, 1);
+  }
+
+  addPortBinding() {
+    this.config.HostConfig.PortBindings.push({ hostPort: '', containerPort: '', protocol: 'tcp' });
+  }
+
+  removePortBinding(index) {
+    this.config.HostConfig.PortBindings.splice(index, 1);
+  }
+
+  addLabel() {
+    this.formValues.Labels.push({ name: '', value: ''});
+  }
+
+  removeLabel(index) {
+    this.formValues.Labels.splice(index, 1);
+  }
+
+  addExtraHost() {
+    this.formValues.ExtraHosts.push({ value: '' });
+  }
+
+  removeExtraHost(index) {
+    this.formValues.ExtraHosts.splice(index, 1);
+  }
+
+  addDevice() {
+    this.config.HostConfig.Devices.push({ pathOnHost: '', pathInContainer: '' });
+  }
+
+  removeDevice(index) {
+    this.config.HostConfig.Devices.splice(index, 1);
+  }
+
+  addLogDriverOpt() {
+    this.formValues.LogDriverOpts.push({ name: '', value: ''});
+  }
+
+  removeLogDriverOpt(index) {
+    this.formValues.LogDriverOpts.splice(index, 1);
+  }
+
+  prepareImageConfig(config) {
+    var image = config.Image;
+    var registry = this.formValues.Registry;
+    var imageConfig = this.ImageHelper.createImageConfigForContainer(image, registry.URL);
+    config.Image = imageConfig.fromImage + ':' + imageConfig.tag;
+    this.imageConfig = imageConfig;
+  }
+
+  preparePortBindings(config) {
     var bindings = {};
-    config.HostConfig.PortBindings.forEach(function (portBinding) {
+    for (const portBinding of config.HostConfig.PortBindings) {
       if (portBinding.containerPort) {
         var key = portBinding.containerPort + '/' + portBinding.protocol;
         var binding = {};
@@ -153,12 +178,12 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
         bindings[key] = [binding];
         config.ExposedPorts[key] = {};
       }
-    });
+    }
     config.HostConfig.PortBindings = bindings;
   }
 
-  function prepareConsole(config) {
-    var value = $scope.formValues.Console;
+  prepareConsole(config) {
+    var value = this.formValues.Console;
     var openStdin = true;
     var tty = true;
     if (value === 'tty') {
@@ -173,21 +198,21 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     config.Tty = tty;
   }
 
-  function prepareEnvironmentVariables(config) {
+  prepareEnvironmentVariables(config) {
     var env = [];
-    config.Env.forEach(function (v) {
+    for (const v of config.Env) {
       if (v.name && v.value) {
         env.push(v.name + '=' + v.value);
       }
-    });
+    }
     config.Env = env;
   }
 
-  function prepareVolumes(config) {
+  prepareVolumes(config) {
     var binds = [];
     var volumes = {};
 
-    $scope.formValues.Volumes.forEach(function (volume) {
+    for (const volume of this.formValues.Volumes) {
       var name = volume.name;
       var containerPath = volume.containerPath;
       if (name && containerPath) {
@@ -198,17 +223,17 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
         }
         binds.push(bind);
       }
-    });
+    }
     config.HostConfig.Binds = binds;
     config.Volumes = volumes;
   }
 
-  function prepareNetworkConfig(config) {
+  prepareNetworkConfig(config) {
     var mode = config.HostConfig.NetworkMode;
-    var container = $scope.formValues.NetworkContainer;
+    var container = this.formValues.NetworkContainer;
     var containerName = container;
     if (container && typeof container === 'object') {
-      containerName = $filter('trimcontainername')(container.Names[0]);
+      containerName = this.$filter('trimcontainername')(container.Names[0]);
     }
     var networkMode = mode;
     if (containerName) {
@@ -216,74 +241,74 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
       config.Hostname = '';
     }
     config.HostConfig.NetworkMode = networkMode;
-    config.MacAddress = $scope.formValues.MacAddress;
+    config.MacAddress = this.formValues.MacAddress;
 
     config.NetworkingConfig.EndpointsConfig[networkMode] = {
       IPAMConfig: {
-        IPv4Address: $scope.formValues.IPv4,
-        IPv6Address: $scope.formValues.IPv6
+        IPv4Address: this.formValues.IPv4,
+        IPv6Address: this.formValues.IPv6
       }
     };
 
-    $scope.formValues.ExtraHosts.forEach(function (v) {
-    if (v.value) {
+    for (const v of this.formValues.ExtraHosts) {
+      if (v.value) {
         config.HostConfig.ExtraHosts.push(v.value);
       }
-    });
+    }
   }
 
-  function prepareLabels(config) {
+  prepareLabels(config) {
     var labels = {};
-    $scope.formValues.Labels.forEach(function (label) {
+    for (const label of this.formValues.Labels) {
       if (label.name && label.value) {
         labels[label.name] = label.value;
       }
-    });
+    }
     config.Labels = labels;
   }
 
-  function prepareDevices(config) {
+  prepareDevices(config) {
     var path = [];
-    config.HostConfig.Devices.forEach(function (p) {
+    for (const p of config.HostConfig.Devices) {
       if (p.pathOnHost) {
         if(p.pathInContainer === '') {
           p.pathInContainer = p.pathOnHost;
         }
         path.push({PathOnHost:p.pathOnHost,PathInContainer:p.pathInContainer,CgroupPermissions:'rwm'});
       }
-    });
+    }
     config.HostConfig.Devices = path;
   }
 
-  function prepareResources(config) {
+  prepareResources(config) {
     // Memory Limit - Round to 0.125
-    var memoryLimit = (Math.round($scope.formValues.MemoryLimit * 8) / 8).toFixed(3);
+    var memoryLimit = (Math.round(this.formValues.MemoryLimit * 8) / 8).toFixed(3);
     memoryLimit *= 1024 * 1024;
     if (memoryLimit > 0) {
       config.HostConfig.Memory = memoryLimit;
     }
     // Memory Resevation - Round to 0.125
-    var memoryReservation = (Math.round($scope.formValues.MemoryReservation * 8) / 8).toFixed(3);
+    var memoryReservation = (Math.round(this.formValues.MemoryReservation * 8) / 8).toFixed(3);
     memoryReservation *= 1024 * 1024;
     if (memoryReservation > 0) {
       config.HostConfig.MemoryReservation = memoryReservation;
     }
     // CPU Limit
-    if ($scope.formValues.CpuLimit > 0) {
-      config.HostConfig.NanoCpus = $scope.formValues.CpuLimit * 1000000000;
+    if (this.formValues.CpuLimit > 0) {
+      config.HostConfig.NanoCpus = this.formValues.CpuLimit * 1000000000;
     }
   }
 
-  function prepareLogDriver(config) {
+  prepareLogDriver(config) {
     var logOpts = {};
-    if ($scope.formValues.LogDriverName) {
-      config.HostConfig.LogConfig = { Type: $scope.formValues.LogDriverName };
-      if ($scope.formValues.LogDriverName !== 'none') {
-        $scope.formValues.LogDriverOpts.forEach(function (opt) {
+    if (this.formValues.LogDriverName) {
+      config.HostConfig.LogConfig = { Type: this.formValues.LogDriverName };
+      if (this.formValues.LogDriverName !== 'none') {
+        for (const opt of this.formValues.LogDriverOpts) {
           if (opt.name) {
             logOpts[opt.name] = opt.value;
           }
-        });
+        }
         if (Object.keys(logOpts).length !== 0 && logOpts.constructor === Object) {
           config.HostConfig.LogConfig.Config = logOpts;
         }
@@ -291,50 +316,42 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     }
   }
 
-  function prepareCapabilities(config) {
-    var allowed = $scope.formValues.capabilities.filter(function(item) {return item.allowed === true;});
-    var notAllowed = $scope.formValues.capabilities.filter(function(item) {return item.allowed === false;});
 
-    var getCapName = function(item) {return item.capability;};
-    config.HostConfig.CapAdd = allowed.map(getCapName);
-    config.HostConfig.CapDrop = notAllowed.map(getCapName);
-  }
 
-  function prepareConfiguration() {
-    var config = angular.copy($scope.config);
-    config.Cmd = ContainerHelper.commandStringToArray(config.Cmd);
-    prepareNetworkConfig(config);
-    prepareImageConfig(config);
-    preparePortBindings(config);
-    prepareConsole(config);
-    prepareEnvironmentVariables(config);
-    prepareVolumes(config);
-    prepareLabels(config);
-    prepareDevices(config);
-    prepareResources(config);
-    prepareLogDriver(config);
+  prepareConfiguration() {
+    var config = angular.copy(this.config);
+    config.Cmd = this.ContainerHelper.commandStringToArray(config.Cmd);
+    this.prepareNetworkConfig(config);
+    this.prepareImageConfig(config);
+    this.preparePortBindings(config);
+    this.prepareConsole(config);
+    this.prepareEnvironmentVariables(config);
+    this.prepareVolumes(config);
+    this.prepareLabels(config);
+    this.prepareDevices(config);
+    this.prepareResources(config);
+    this.prepareLogDriver(config);
     prepareCapabilities(config);
     return config;
   }
 
-  
-  function loadFromContainerCmd() {
-    if ($scope.config.Cmd) {
-      $scope.config.Cmd = ContainerHelper.commandArrayToString($scope.config.Cmd);
+  loadFromContainerCmd() {
+    if (this.config.Cmd) {
+      this.config.Cmd = this.ContainerHelper.commandArrayToString(this.config.Cmd);
     } else {
-      $scope.config.Cmd = '';
+      this.config.Cmd = '';
     }
   }
 
-  function loadFromContainerPortBindings() {
+  loadFromContainerPortBindings() {
     var bindings = [];
-    for (var p in $scope.config.HostConfig.PortBindings) {
-      if ({}.hasOwnProperty.call($scope.config.HostConfig.PortBindings, p)) {
+    for (var p in this.config.HostConfig.PortBindings) {
+      if ({}.hasOwnProperty.call(this.config.HostConfig.PortBindings, p)) {
         var hostPort = '';
-        if ($scope.config.HostConfig.PortBindings[p][0].HostIp) {
-          hostPort = $scope.config.HostConfig.PortBindings[p][0].HostIp + ':';
+        if (this.config.HostConfig.PortBindings[p][0].HostIp) {
+          hostPort = this.config.HostConfig.PortBindings[p][0].HostIp + ':';
         }
-        hostPort += $scope.config.HostConfig.PortBindings[p][0].HostPort;
+        hostPort += this.config.HostConfig.PortBindings[p][0].HostPort;
         var b = {
           'hostPort': hostPort,
           'containerPort': p.split('/')[0],
@@ -343,10 +360,10 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
         bindings.push(b);
       }
     }
-    $scope.config.HostConfig.PortBindings = bindings;
+    this.config.HostConfig.PortBindings = bindings;
   }
 
-  function loadFromContainerVolumes(d) {
+  loadFromContainerVolumes(d) {
     for (var v in d.Mounts) {
       if ({}.hasOwnProperty.call(d.Mounts, v)) {
         var mount = d.Mounts[v];
@@ -356,200 +373,194 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
           'containerPath': mount.Destination,
           'readOnly': mount.RW === false
         };
-        $scope.formValues.Volumes.push(volume);
+        this.formValues.Volumes.push(volume);
       }
     }
   }
 
-  $scope.resetNetworkConfig = function() {
-    $scope.config.NetworkingConfig = {
+  resetNetworkConfig() {
+    this.config.NetworkingConfig = {
       EndpointsConfig: {}
     };
-  };
+  }
 
-  function loadFromContainerNetworkConfig(d) {
-    $scope.config.NetworkingConfig = {
+  loadFromContainerNetworkConfig(d) {
+    this.config.NetworkingConfig = {
       EndpointsConfig: {}
     };
     var networkMode = d.HostConfig.NetworkMode;
     if (networkMode === 'default') {
-      $scope.config.HostConfig.NetworkMode = 'bridge';
-      if (!_.find($scope.availableNetworks, {'Name': 'bridge'})) {
-        $scope.config.HostConfig.NetworkMode = 'nat';
+      this.config.HostConfig.NetworkMode = 'bridge';
+      if (!_.find(this.availableNetworks, {'Name': 'bridge'})) {
+        this.config.HostConfig.NetworkMode = 'nat';
       }
     }
-    if ($scope.config.HostConfig.NetworkMode.indexOf('container:') === 0) {
-      var netContainer = $scope.config.HostConfig.NetworkMode.split(/^container:/)[1];
-      $scope.config.HostConfig.NetworkMode = 'container';
-      for (var c in $scope.runningContainers) {
-        if ($scope.runningContainers[c].Names && $scope.runningContainers[c].Names[0] === '/' + netContainer) {
-          $scope.formValues.NetworkContainer = $scope.runningContainers[c];
+    if (this.config.HostConfig.NetworkMode.indexOf('container:') === 0) {
+      var netContainer = this.config.HostConfig.NetworkMode.split(/^container:/)[1];
+      this.config.HostConfig.NetworkMode = 'container';
+      for (var c in this.runningContainers) {
+        if (this.runningContainers[c].Names && this.runningContainers[c].Names[0] === '/' + netContainer) {
+          this.formValues.NetworkContainer = this.runningContainers[c];
         }
       }
     }
-    $scope.fromContainerMultipleNetworks = Object.keys(d.NetworkSettings.Networks).length >= 2;
-    if (d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode]) {
-      if (d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode].IPAMConfig) {
-        if (d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode].IPAMConfig.IPv4Address) {
-          $scope.formValues.IPv4 = d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode].IPAMConfig.IPv4Address;
+    this.fromContainerMultipleNetworks = Object.keys(d.NetworkSettings.Networks).length >= 2;
+    if (d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode]) {
+      if (d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode].IPAMConfig) {
+        if (d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode].IPAMConfig.IPv4Address) {
+          this.formValues.IPv4 = d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode].IPAMConfig.IPv4Address;
         }
-        if (d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode].IPAMConfig.IPv6Address) {
-          $scope.formValues.IPv6 = d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode].IPAMConfig.IPv6Address;
+        if (d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode].IPAMConfig.IPv6Address) {
+          this.formValues.IPv6 = d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode].IPAMConfig.IPv6Address;
         }
       }
     }
-    $scope.config.NetworkingConfig.EndpointsConfig[$scope.config.HostConfig.NetworkMode] = d.NetworkSettings.Networks[$scope.config.HostConfig.NetworkMode];
+    this.config.NetworkingConfig.EndpointsConfig[this.config.HostConfig.NetworkMode] = d.NetworkSettings.Networks[this.config.HostConfig.NetworkMode];
     // Mac Address
     if(Object.keys(d.NetworkSettings.Networks).length) {
       var firstNetwork = d.NetworkSettings.Networks[Object.keys(d.NetworkSettings.Networks)[0]];
-      $scope.formValues.MacAddress = firstNetwork.MacAddress;
-      $scope.config.NetworkingConfig.EndpointsConfig[$scope.config.HostConfig.NetworkMode] = firstNetwork;
-      $scope.extraNetworks = angular.copy(d.NetworkSettings.Networks);
-      delete $scope.extraNetworks[Object.keys(d.NetworkSettings.Networks)[0]];
+      this.formValues.MacAddress = firstNetwork.MacAddress;
+      this.config.NetworkingConfig.EndpointsConfig[this.config.HostConfig.NetworkMode] = firstNetwork;
+      this.extraNetworks = angular.copy(d.NetworkSettings.Networks);
+      delete this.extraNetworks[Object.keys(d.NetworkSettings.Networks)[0]];
     } else {
-      $scope.formValues.MacAddress = '';
+      this.formValues.MacAddress = '';
     }
 
     // ExtraHosts
-    if ($scope.config.HostConfig.ExtraHosts) {
-      var extraHosts = $scope.config.HostConfig.ExtraHosts;
+    if (this.config.HostConfig.ExtraHosts) {
+      var extraHosts = this.config.HostConfig.ExtraHosts;
       for (var i = 0; i < extraHosts.length; i++) {
         var host = extraHosts[i];
-        $scope.formValues.ExtraHosts.push({ 'value': host });
+        this.formValues.ExtraHosts.push({ 'value': host });
       }
-      $scope.config.HostConfig.ExtraHosts = [];
+      this.config.HostConfig.ExtraHosts = [];
     }
   }
 
-  function loadFromContainerEnvironmentVariables() {
+  loadFromContainerEnvironmentVariables() {
     var envArr = [];
-    for (var e in $scope.config.Env) {
-      if ({}.hasOwnProperty.call($scope.config.Env, e)) {
-        var arr = $scope.config.Env[e].split(/\=(.+)/);
+    for (var e in this.config.Env) {
+      if ({}.hasOwnProperty.call(this.config.Env, e)) {
+        var arr = this.config.Env[e].split(/\=(.+)/);
         envArr.push({'name': arr[0], 'value': arr[1]});
       }
     }
-    $scope.config.Env = envArr;
+    this.config.Env = envArr;
   }
 
-  function loadFromContainerLabels() {
-    for (var l in $scope.config.Labels) {
-      if ({}.hasOwnProperty.call($scope.config.Labels, l)) {
-        $scope.formValues.Labels.push({ name: l, value: $scope.config.Labels[l]});
+  loadFromContainerLabels() {
+    for (var l in this.config.Labels) {
+      if ({}.hasOwnProperty.call(this.config.Labels, l)) {
+        this.formValues.Labels.push({ name: l, value: this.config.Labels[l]});
       }
     }
   }
 
-  function loadFromContainerConsole() {
-    if ($scope.config.OpenStdin && $scope.config.Tty) {
-      $scope.formValues.Console = 'both';
-    } else if (!$scope.config.OpenStdin && $scope.config.Tty) {
-      $scope.formValues.Console = 'tty';
-    } else if ($scope.config.OpenStdin && !$scope.config.Tty) {
-      $scope.formValues.Console = 'interactive';
-    } else if (!$scope.config.OpenStdin && !$scope.config.Tty) {
-      $scope.formValues.Console = 'none';
+  loadFromContainerConsole() {
+    if (this.config.OpenStdin && this.config.Tty) {
+      this.formValues.Console = 'both';
+    } else if (!this.config.OpenStdin && this.config.Tty) {
+      this.formValues.Console = 'tty';
+    } else if (this.config.OpenStdin && !this.config.Tty) {
+      this.formValues.Console = 'interactive';
+    } else if (!this.config.OpenStdin && !this.config.Tty) {
+      this.formValues.Console = 'none';
     }
   }
 
-  function loadFromContainerDevices() {
+  loadFromContainerDevices() {
     var path = [];
-    for (var dev in $scope.config.HostConfig.Devices) {
-      if ({}.hasOwnProperty.call($scope.config.HostConfig.Devices, dev)) {
-        var device = $scope.config.HostConfig.Devices[dev];
+    for (var dev in this.config.HostConfig.Devices) {
+      if ({}.hasOwnProperty.call(this.config.HostConfig.Devices, dev)) {
+        var device = this.config.HostConfig.Devices[dev];
         path.push({'pathOnHost': device.PathOnHost, 'pathInContainer': device.PathInContainer});
       }
     }
-    $scope.config.HostConfig.Devices = path;
+    this.config.HostConfig.Devices = path;
   }
 
-  function loadFromContainerImageConfig() {
-    var imageInfo = ImageHelper.extractImageAndRegistryFromRepository($scope.config.Image);
-    RegistryService.retrieveRegistryFromRepository($scope.config.Image)
+  loadFromContainerImageConfig() {
+    var imageInfo = this.ImageHelper.extractImageAndRegistryFromRepository(this.config.Image);
+    this.RegistryService.retrieveRegistryFromRepository(this.config.Image)
     .then(function success(data) {
       if (data) {
-        $scope.config.Image = imageInfo.image;
-        $scope.formValues.Registry = data;
+        this.config.Image = imageInfo.image;
+        this.formValues.Registry = data;
       }
     })
     .catch(function error(err) {
-      Notifications.error('Failure', err, 'Unable to retrive registry');
+      this.Notifications.error('Failure', err, 'Unable to retrive registry');
     });
   }
 
-  function loadFromContainerResources(d) {
+  loadFromContainerResources(d) {
     if (d.HostConfig.NanoCpus) {
-      $scope.formValues.CpuLimit = d.HostConfig.NanoCpus / 1000000000;
+      this.formValues.CpuLimit = d.HostConfig.NanoCpus / 1000000000;
     }
     if (d.HostConfig.Memory) {
-      $scope.formValues.MemoryLimit = d.HostConfig.Memory / 1024 / 1024;
+      this.formValues.MemoryLimit = d.HostConfig.Memory / 1024 / 1024;
     }
     if (d.HostConfig.MemoryReservation) {
-      $scope.formValues.MemoryReservation = d.HostConfig.MemoryReservation / 1024 / 1024;
+      this.formValues.MemoryReservation = d.HostConfig.MemoryReservation / 1024 / 1024;
     }
   }
 
-  function loadFromContainerCapabilities(d) {
+  loadFromContainerCapabilities(d) {
     if (d.HostConfig.CapAdd) {
-      d.HostConfig.CapAdd.forEach(function(cap) {
-        $scope.formValues.capabilities.push(new ContainerCapability(cap, true));
-      });
+      for (const cap of d.HostConfig.CapAdd) {
+        this.formValues.capabilities.push(new ContainerCapability(cap, true));
+      }
     }
     if (d.HostConfig.CapDrop) {
-      d.HostConfig.CapDrop.forEach(function(cap) {
-        $scope.formValues.capabilities.push(new ContainerCapability(cap, false));
-      });
-    }
-
-    function hasCapability(item) {
-      return item.capability === cap.capability;
+      for (const cap of d.HostConfig.CapDrop) {
+        this.formValues.capabilities.push(new ContainerCapability(cap, false));
+      }
     }
 
     var capabilities = new ContainerCapabilities();
     for (var i = 0; i < capabilities.length; i++) {
       var cap = capabilities[i];
-      if (!_.find($scope.formValues.capabilities, hasCapability)) {
-        $scope.formValues.capabilities.push(cap);
+      if (!_.find(this.formValues.capabilities, (item) => item.capability === cap.capability)) {
+        this.formValues.capabilities.push(cap);
       }
     }
 
-    $scope.formValues.capabilities.sort(function(a, b) {
-      return a.capability < b.capability ? -1 : 1;
-    });
+    this.formValues.capabilities.sort((a, b) => a.capability < b.capability ? -1 : 1);
   }
 
-  function loadFromContainerSpec() {
+  loadFromContainerSpec() {
     // Get container
-    Container.get({ id: $transition$.params().from }).$promise
+    this.Container.get({ id: this.$transition$.params().from }).$promise
     .then(function success(d) {
       var fromContainer = new ContainerDetailsViewModel(d);
       if (fromContainer.ResourceControl && fromContainer.ResourceControl.Public) {
-        $scope.formValues.AccessControlData.AccessControlEnabled = false;
+        this.formValues.AccessControlData.AccessControlEnabled = false;
       }
-      $scope.fromContainer = fromContainer;
-      $scope.config = ContainerHelper.configFromContainer(fromContainer.Model);
-      loadFromContainerCmd(d);
-      loadFromContainerLogging(d);
-      loadFromContainerPortBindings(d);
-      loadFromContainerVolumes(d);
-      loadFromContainerNetworkConfig(d);
-      loadFromContainerEnvironmentVariables(d);
-      loadFromContainerLabels(d);
-      loadFromContainerConsole(d);
-      loadFromContainerDevices(d);
-      loadFromContainerImageConfig(d);
-      loadFromContainerResources(d);
-      loadFromContainerCapabilities(d);
+      this.fromContainer = fromContainer;
+      this.config = this.ContainerHelper.configFromContainer(fromContainer.Model);
+      this.loadFromContainerCmd(d);
+      this.loadFromContainerLogging(d);
+      this.loadFromContainerPortBindings(d);
+      this.loadFromContainerVolumes(d);
+      this.loadFromContainerNetworkConfig(d);
+      this.loadFromContainerEnvironmentVariables(d);
+      this.loadFromContainerLabels(d);
+      this.loadFromContainerConsole(d);
+      this.loadFromContainerDevices(d);
+      this.loadFromContainerImageConfig(d);
+      this.loadFromContainerResources(d);
+      this.loadFromContainerCapabilities(d);
     })
     .catch(function error(err) {
-      Notifications.error('Failure', err, 'Unable to retrieve container');
+      this.Notifications.error('Failure', err, 'Unable to retrieve container');
     });
   }
 
-  function loadFromContainerLogging(config) {
+  loadFromContainerLogging(config) {
     var logConfig = config.HostConfig.LogConfig;
-    $scope.formValues.LogDriverName = logConfig.Type;
-    $scope.formValues.LogDriverOpts = _.map(logConfig.Config, function (value, name) {
+    this.formValues.LogDriverName = logConfig.Type;
+    this.formValues.LogDriverOpts = _.map(logConfig.Config, function (value, name) {
       return {
         name: name,
         value: value
@@ -557,103 +568,101 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     });
   }
 
-  function initView() {
-    var nodeName = $transition$.params().nodeName;
-    $scope.formValues.NodeName = nodeName;
-    HttpRequestHelper.setPortainerAgentTargetHeader(nodeName);
+  async $onInit() {
+    var nodeName = this.$transition$.params().nodeName;
+    this.formValues.NodeName = nodeName;
+    this.HttpRequestHelper.setPortainerAgentTargetHeader(nodeName);
+    try {
+      let data = await this.VolumeService.volumes({});
+      this.availableVolumes = data.Volumes;
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to retrieve volumes');
+    }
 
-    Volume.query({}, function (d) {
-      $scope.availableVolumes = d.Volumes;
-    }, function (e) {
-      Notifications.error('Failure', e, 'Unable to retrieve volumes');
-    });
-
-    var provider = $scope.applicationState.endpoint.mode.provider;
-    var apiVersion = $scope.applicationState.endpoint.apiVersion;
-    NetworkService.networks(
-      provider === 'DOCKER_STANDALONE' || provider === 'DOCKER_SWARM_MODE',
-      false,
-      provider === 'DOCKER_SWARM_MODE' && apiVersion >= 1.25
-    )
-    .then(function success(data) {
+    var provider = this.$scope.applicationState.endpoint.mode.provider;
+    var apiVersion = this.$scope.applicationState.endpoint.apiVersion;
+    try {
+      let data = await this.NetworkService.networks(
+        provider === 'DOCKER_STANDALONE' || provider === 'DOCKER_SWARM_MODE',
+        false,
+        provider === 'DOCKER_SWARM_MODE' && apiVersion >= 1.25
+      );
       var networks = data;
       networks.push({ Name: 'container' });
-      $scope.availableNetworks = networks;
+      this.availableNetworks = networks;
 
       if (_.find(networks, {'Name': 'nat'})) {
-        $scope.config.HostConfig.NetworkMode = 'nat';
+        this.config.HostConfig.NetworkMode = 'nat';
       }
-    })
-    .catch(function error(err) {
-      Notifications.error('Failure', err, 'Unable to retrieve networks');
-    });
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to retrieve networks');
+    }
 
-    Container.query({}, function (d) {
-      var containers = d;
-      $scope.runningContainers = containers;
-      if ($transition$.params().from) {
-        loadFromContainerSpec();
+    try {
+      this.runningContainers = await this.ContainerService.containers();
+      if (this.$transition$.params().from) {
+        this.loadFromContainerSpec();
       } else {
-        $scope.fromContainer = {};
-        $scope.formValues.Registry = {};
-        $scope.formValues.capabilities = new ContainerCapabilities();
+        this.fromContainer = {};
+        this.formValues.Registry = {};
+        this.formValues.capabilities = new ContainerCapabilities();
       }
-    }, function(e) {
-      Notifications.error('Failure', e, 'Unable to retrieve running containers');
-    });
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to retrieve running containers');
+    }
 
-    SystemService.info()
-    .then(function success(data) {
-      $scope.availableRuntimes = Object.keys(data.Runtimes);
-      $scope.config.HostConfig.Runtime = '';
-      $scope.state.sliderMaxCpu = 32;
+    try {
+      let data = await this.SystemService.info();
+      this.availableRuntimes = Object.keys(data.Runtimes);
+      this.config.HostConfig.Runtime = '';
+      this.state.sliderMaxCpu = 32;
       if (data.NCPU) {
-        $scope.state.sliderMaxCpu = data.NCPU;
+        this.state.sliderMaxCpu = data.NCPU;
       }
-      $scope.state.sliderMaxMemory = 32768;
+      this.state.sliderMaxMemory = 32768;
       if (data.MemTotal) {
-        $scope.state.sliderMaxMemory = Math.floor(data.MemTotal / 1000 / 1000);
+        this.state.sliderMaxMemory = Math.floor(data.MemTotal / 1000 / 1000);
       }
-    })
-    .catch(function error(err) {
-      Notifications.error('Failure', err, 'Unable to retrieve engine details');
-    });
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to retrieve engine details');
+    }
 
-    SettingsService.publicSettings()
-    .then(function success(data) {
-      $scope.allowBindMounts = data.AllowBindMountsForRegularUsers;
-      $scope.allowPrivilegedMode = data.AllowPrivilegedModeForRegularUsers;
-    })
-    .catch(function error(err) {
-      Notifications.error('Failure', err, 'Unable to retrieve application settings');
-    });
 
-    PluginService.loggingPlugins(apiVersion < 1.25)
-    .then(function success(loggingDrivers) {
-      $scope.availableLoggingDrivers = loggingDrivers;
-    });
+    try {
+      let data = await this.SettingsService.publicSettings();
+      this.allowBindMounts = data.AllowBindMountsForRegularUsers;
+      this.allowPrivilegedMode = data.AllowPrivilegedModeForRegularUsers;
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to retrieve application settings');
+    }
 
-    var userDetails = Authentication.getUserDetails();
-    $scope.isAdmin = userDetails.role === 1;
+    try {
+      this.availableLoggingDrivers = await this.PluginService.loggingPlugins(apiVersion < 1.25);
+    } catch (err) {
+      this.Notifications.error('Failure', err, 'Unable to load logging plugins');
+    }
+
+    var userDetails = this.Authentication.getUserDetails();
+    this.isAdmin = userDetails.role === 1;
   }
 
-  function validateForm(accessControlData, isAdmin) {
-    $scope.state.formValidationError = '';
+  validateForm(accessControlData, isAdmin) {
+    this.state.formValidationError = '';
     var error = '';
-    error = FormValidator.validateAccessControl(accessControlData, isAdmin);
+    error = this.FormValidator.validateAccessControl(accessControlData, isAdmin);
 
     if (error) {
-      $scope.state.formValidationError = error;
+      this.state.formValidationError = error;
       return false;
     }
     return true;
   }
 
 
-  function create() {
+  create() {
     var oldContainer = null;
 
-    HttpRequestHelper.setPortainerAgentTargetHeader($scope.formValues.NodeName);
+    this.HttpRequestHelper.setPortainerAgentTargetHeader(this.formValues.NodeName);
     return findCurrentContainer()
       .then(setOldContainer)
       .then(confirmCreateContainer)
@@ -662,7 +671,7 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
       .finally(final);
 
     function final() {
-      $scope.state.actionInProgress = false;
+      this.state.actionInProgress = false;
     }
 
     function setOldContainer(container) {
@@ -671,7 +680,7 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     }
 
     function findCurrentContainer() {
-      return Container.query({ all: 1, filters: { name: ['^/' + $scope.config.name + '$'] } })
+      return this.ContainerService.containers(1, { name: ['^/' + this.config.name + '$'] } )
         .$promise
         .then(function onQuerySuccess(containers) {
           if (!containers.length) {
@@ -682,18 +691,18 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
         .catch(notifyOnError);
 
       function notifyOnError(err) {
-        Notifications.error('Failure', err, 'Unable to retrieve containers');
+        this.Notifications.error('Failure', err, 'Unable to retrieve containers');
       }
     }
 
     function startCreationProcess(confirmed) {
       if (!confirmed) {
-        return $q.when();
+        return this.$q.when();
       }
       if (!validateAccessControl()) {
-        return $q.when();
+        return this.$q.when();
       }
-      $scope.state.actionInProgress = true;
+      this.state.actionInProgress = true;
       return pullImageIfNeeded()
         .then(stopAndRenameContainer)
         .then(createNewContainer)
@@ -705,7 +714,7 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     }
 
     function onCreationProcessFail(error) {
-      var deferred = $q.defer();
+      var deferred = this.$q.defer();
       removeNewContainer()
         .then(restoreOldContainerName)
         .then(function() {
@@ -720,7 +729,7 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     function removeNewContainer() {
       return findCurrentContainer().then(function onContainerLoaded(container) {
         if (container && (!oldContainer || container.Id !== oldContainer.Id)) {
-          return ContainerService.remove(container, true);
+          return this.ContainerService.remove(container, true);
         }
       });
     }
@@ -729,20 +738,20 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
       if (!oldContainer) {
         return;
       }
-      return ContainerService.renameContainer(oldContainer.Id, oldContainer.Names[0].substring(1));
+      return this.ContainerService.renameContainer(oldContainer.Id, oldContainer.Names[0].substring(1));
     }
 
     function confirmCreateContainer(container) {
       if (!container) {
-        return $q.when(true);
+        return this.$q.when(true);
       }
 
       return showConfirmationModal();
 
       function showConfirmationModal() {
-        var deferred = $q.defer();
+        var deferred = this.$q.defer();
 
-        ModalService.confirm({
+        this.ModalService.confirm({
           title: 'Are you sure ?',
           message: 'A container with the same name already exists. Portainer can automatically remove it and re-create one. Do you want to replace it?',
           buttons: {
@@ -762,7 +771,7 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
 
     function stopAndRenameContainer() {
       if (!oldContainer) {
-        return $q.when();
+        return this.$q.when();
       }
       return stopContainerIfNeeded(oldContainer)
         .then(renameContainer);
@@ -770,67 +779,67 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
 
     function stopContainerIfNeeded(oldContainer) {
       if (oldContainer.State !== 'running') {
-        return $q.when();
+        return this.$q.when();
       }
-      return ContainerService.stopContainer(oldContainer.Id);
+      return this.ContainerService.stopContainer(oldContainer.Id);
     }
 
     function renameContainer() {
-      return ContainerService.renameContainer(oldContainer.Id, oldContainer.Names[0].substring(1) + '-old');
+      return this.ContainerService.renameContainer(oldContainer.Id, oldContainer.Names[0].substring(1) + '-old');
     }
 
     function pullImageIfNeeded() {
-      return $q.when($scope.formValues.alwaysPull &&
-        ImageService.pullImage($scope.config.Image, $scope.formValues.Registry, true));
+      return this.$q.when(this.formValues.alwaysPull &&
+        this.ImageService.pullImage(this.config.Image, this.formValues.Registry, true));
     }
 
     function createNewContainer() {
-      var config = prepareConfiguration();
-      return ContainerService.createAndStartContainer(config);
+      var config = this.prepareConfiguration();
+      return this.ContainerService.createAndStartContainer(config);
     }
 
     function applyResourceControl(newContainer) {
       var containerIdentifier = newContainer.Id;
-      var userId = Authentication.getUserDetails().ID;
+      var userId = this.Authentication.getUserDetails().ID;
 
-      return $q.when(ResourceControlService.applyResourceControl(
+      return this.$q.when(this.ResourceControlService.applyResourceControl(
         'container',
         containerIdentifier,
         userId,
-        $scope.formValues.AccessControlData, []
+        this.formValues.AccessControlData, []
       )).then(function onApplyResourceControlSuccess() {
         return containerIdentifier;
       });
     }
 
     function connectToExtraNetworks(newContainerId) {
-      if (!$scope.extraNetworks) {
-        return $q.when();
+      if (!this.extraNetworks) {
+        return this.$q.when();
       }
 
-      var connectionPromises = Object.keys($scope.extraNetworks).map(function (networkName) {
-        return NetworkService.connectContainer(networkName, newContainerId);
+      var connectionPromises = Object.keys(this.extraNetworks).map(function (networkName) {
+        return this.NetworkService.connectContainer(networkName, newContainerId);
       });
 
-      return $q.all(connectionPromises);
+      return this.$q.all(connectionPromises);
     }
 
     function removeOldContainer() {
-      var deferred = $q.defer();
+      var deferred = this.$q.defer();
 
       if (!oldContainer) {
         deferred.resolve();
         return;
       }
 
-      ContainerService.remove(oldContainer, true)
+      this.ContainerService.remove(oldContainer, true)
         .then(notifyOnRemoval)
         .catch(notifyOnRemoveError);
 
       return deferred.promise;
 
       function notifyOnRemoval() {
-        Notifications.success('Container Removed', oldContainer.Id);
+        this.Notifications.success('Container Removed', oldContainer.Id);
         deferred.resolve();
       }
 
@@ -840,22 +849,23 @@ function ($q, $scope, $state, $timeout, $transition$, $filter, Container, Contai
     }
 
     function notifyOnError(err) {
-      Notifications.error('Failure', err, 'Unable to create container');
+      this.Notifications.error('Failure', err, 'Unable to create container');
     }
 
     function validateAccessControl() {
-      var accessControlData = $scope.formValues.AccessControlData;
-      var userDetails = Authentication.getUserDetails();
+      var accessControlData = this.formValues.AccessControlData;
+      var userDetails = this.Authentication.getUserDetails();
       var isAdmin = userDetails.role === 1;
 
-      return validateForm(accessControlData, isAdmin);
+      return this.validateForm(accessControlData, isAdmin);
     }
 
     function onSuccess() {
-      Notifications.success('Container successfully created');
-      $state.go('docker.containers', {}, { reload: true });
+      this.Notifications.success('Container successfully created');
+      this.$state.go('docker.containers', {}, { reload: true });
     }
   }
+}
 
-  initView();
-}]);
+export default CreateContainerController;
+angular.module('portainer.docker').controller('CreateContainerController', CreateContainerController);
